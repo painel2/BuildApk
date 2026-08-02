@@ -200,6 +200,11 @@ class DirectBufferLayout(BoxLayout):
     def obter_caminho_ffmpeg(self):
         caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
         if os.path.exists(caminho_local):
+            try:
+                # Força a permissão de execução para o Android não bloquear o binário
+                os.chmod(caminho_local, 0o755)
+            except Exception:
+                pass
             return caminho_local
         return 'ffmpeg'
 
