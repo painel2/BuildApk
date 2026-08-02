@@ -12,17 +12,17 @@ package.domain = org.meuapp
 # (str) Source code where the main.py live
 source.dir = .
 
-# (list) Source files to include (inclui HTML, CSS e JS do templates)
-source.include_exts = py,png,jpg,kv,atlas,html,css,js
+# (list) Source files to include
+source.include_exts = py,png,jpg,kv,atlas
 
-# (list) Include patterns (Inclui a pasta templates e o executável do ffmpeg da pasta bin)
-source.include_patterns = bin/*,templates/*
+# (list) Include patterns (Inclui o executavel do ffmpeg da pasta bin)
+source.include_patterns = bin/*
 
 # (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements (Inclui Flask, Streamlink, PyJnius e dependências de rede)
-requirements = python3,kivy,flask,pyjnius,requests,urllib3,certifi,idna,charset_normalizer,streamlink
+# (list) Application requirements (Python3, Kivy, Streamlink e dependências de rede)
+requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer,streamlink
 
 # (str) Supported orientations
 orientation = portrait
