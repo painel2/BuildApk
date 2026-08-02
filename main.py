@@ -1,130 +1,106 @@
-import re
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.scrollview import ScrollView
-from kivy.clock import mainthread
+import os
+import shutil
 import threading
+import time
+import subprocess
+from datetime import datetime
 
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable
+# URL do fluxo da Twitch (.m3u8) ou da live
+# Obs: Para testes rápidos, você pode usar qualquer URL de stream HLS (.m3u8)
+STREAM_URL = "SUA_URL_HLS_M3U8_AQUI" 
 
-class SubtitleApp(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.orientation = 'vertical'
-        self.padding = 15
-        self.spacing = 10
+BUFFER_DIR = "./temp_buffer"
+CLIPS_DIR = "./meus_clipes"
+BUFFER_FILE = os.path.join(BUFFER_DIR, "buffer_5min.mp4")
 
-        # Título
-        self.add_widget(Label(
-            text="[b]Puxador de Legendas do YT[/b]", 
-            markup=True, 
-            font_size='20sp', 
-            size_hint_y=None, 
-            height=40
-        ))
+# Flags de controle de threads
+rodando = True
 
-        # Campo de entrada (Link ou ID)
-        self.url_input = TextInput(
-            hint_text="Cole o link do YouTube ou ID aqui...",
-            multiline=False,
-            size_hint_y=None,
-            height=50,
-            padding=[10, 15]
-        )
-        self.add_widget(self.url_input)
+def preparar_pastas():
+    """Cria as pastas necessárias para o buffer e os clipes salvos."""
+    os.makedirs(BUFFER_DIR, exist_ok=True)
+    os.makedirs(CLIPS_DIR, exist_ok=True)
 
-        # Botão de Buscar
-        self.btn_buscar = Button(
-            text="Baixar Legenda",
-            size_hint_y=None,
-            height=50
-        )
-        self.btn_buscar.bind(on_press=self.iniciar_busca)
-        self.add_widget(self.btn_buscar)
+def iniciar_buffer_5min(stream_url):
+    """
+    Roda o FFmpeg em background gravando os últimos 5 minutos (300 segundos)
+    de forma circular no arquivo de buffer temporário.
+    """
+    global rodando
+    preparar_pastas()
+    
+    # Comando FFmpeg:
+    # -y: sobrescreve sem pedir
+    # -i: URL de entrada do vídeo
+    # -c copy: copia o formato nativo sem gastar CPU recodificando
+    # -t 300: limita a duração contínua a 300 segundos (5 minutos)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", stream_url,
+        "-c", "copy",
+        "-t", "300",
+        BUFFER_FILE
+    ]
 
-        # Área com Scroll para exibir o texto
-        scroll = ScrollView(size_hint=(1, 1))
-        self.result_label = Label(
-            text="A legenda aparecerá aqui...",
-            size_hint_y=None,
-            text_size=(None, None),
-            valign='top',
-            halign='left',
-            padding=[10, 10]
-        )
-        self.result_label.bind(
-            texture_size=lambda instance, value: setattr(instance, 'height', value[1])
-        )
-        self.result_label.bind(
-            width=lambda instance, value: setattr(instance, 'text_size', (value, None))
-        )
-        scroll.add_widget(self.result_label)
-        self.add_widget(scroll)
+    print("🟢 [Buffer] Iniciando gravação em segundo plano...")
+    
+    # Executa o processo do FFmpeg
+    processo = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    while rodando:
+        # Se o processo terminar por limite de tempo, reinicia o loop do buffer
+        if processo.poll() is not None:
+            processo = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
 
-    def extrair_id(self, url_ou_id):
-        url_ou_id = url_ou_id.strip()
-        # Regex para extrair ID de 11 caracteres de links normais e curtos
-        padrao = r'(?:v=|\/|youtu\.be\/)([a-zA-Z0-9_-]{11})'
-        match = re.search(padrao, url_ou_id)
-        if match:
-            return match.group(1)
-        if len(url_ou_id) == 11:
-            return url_ou_id
-        return None
+    # Finaliza o processo ao fechar o app
+    processo.terminate()
+    print("🔴 [Buffer] Gravação encerrada.")
 
-    def iniciar_busca(self, instance):
-        url = self.url_input.text
-        video_id = self.extrair_id(url)
+def salvar_clipe():
+    """Copia o buffer atual de 5 minutos para a pasta de clipes salvos."""
+    if not os.path.exists(BUFFER_FILE) or os.path.getsize(BUFFER_FILE) == 0:
+        print("\n⚠️ [Erro] O buffer ainda está sendo gerado. Aguarde alguns segundos...")
+        return
 
-        if not video_id:
-            self.atualizar_texto("❌ Link ou ID do YouTube inválido!")
-            return
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    nome_clipe = f"Clipe_Twitch_{timestamp}.mp4"
+    caminho_destino = os.path.join(CLIPS_DIR, nome_clipe)
 
-        self.atualizar_texto("⏳ Buscando legenda, aguarde...")
-        self.btn_buscar.disabled = True
+    try:
+        # Faz a cópia instantânea do arquivo de buffer sem pausar a gravação
+        shutil.copy(BUFFER_FILE, caminho_destino)
+        print(f"\n✅ [Sucesso] Clipe de 5 minutos salvo em: {caminho_destino}")
+    except Exception as e:
+        print(f"\n❌ [Erro ao salvar clipe]: {e}")
 
-        # Roda a busca em uma Thread separada para não travar a tela
-        threading.Thread(target=self.buscar_legenda, args=(video_id,)).start()
+# ==========================================
+# SIMULAÇÃO DA INTERFACE DO APP (MAIN)
+# ==========================================
+if __name__ == "__main__":
+    preparar_pastas()
 
-    def buscar_legenda(self, video_id):
-        try:
-            transcript = YouTubeTranscriptApi().fetch(video_id, languages=["pt", "en"])
-            
-            linhas = []
-            for snippet in transcript:
-                m = int(snippet.start // 60)
-                s = int(snippet.start % 60)
-                linhas.append(f"[{m:02d}:{s:02d}] {snippet.text}")
-            
-            texto_final = "\n".join(linhas)
-            self.atualizar_texto(texto_final)
+    # 1. Inicia a Thread do Buffer (Segunda tarefa em paralelo)
+    thread_buffer = threading.Thread(target=iniciar_buffer_5min, args=(STREAM_URL,), daemon=True)
+    thread_buffer.start()
 
-        except TranscriptsDisabled:
-            self.atualizar_texto("❌ Esse vídeo está com as legendas desativadas.")
-        except VideoUnavailable:
-            self.atualizar_texto("❌ Vídeo indisponível ou não encontrado.")
-        except Exception as e:
-            self.atualizar_texto(f"❌ Erro ao buscar legenda: {str(e)}")
-        finally:
-            self.liberar_botao()
+    print("\n==============================================")
+    print(" 🎬 Player da Live Ativo (Assistindo...) ")
+    print("==============================================")
+    print(" Digite 'c' para SALVAR OS ÚLTIMOS 5 MINUTOS")
+    print(" Digite 's' para SAIR")
+    print("==============================================\n")
 
-    @mainthread
-    def atualizar_texto(self, texto):
-        self.result_label.text = texto
+    # 2. Thread Principal (Menu interativo / Botões da tela)
+    try:
+        while True:
+            opcao = input("Ação [c = Clipar / s = Sair]: ").strip().lower()
+            if opcao == 'c':
+                salvar_clipe()
+            elif opcao == 's':
+                print("Encerrando aplicativo...")
+                rodando = False
+                break
+    except KeyboardInterrupt:
+        rodando = False
 
-    @mainthread
-    def liberar_botao(self):
-        self.btn_buscar.disabled = False
-
-
-class MainApp(App):
-    def build(self):
-        self.title = "Legendas YT"
-        return SubtitleApp()
-
-if __name__ == '__main__':
-    MainApp().run()
