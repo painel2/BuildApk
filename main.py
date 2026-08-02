@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 import threading
+import shutil
 from glob import glob
 
 from kivy.app import App
@@ -198,14 +199,26 @@ class DirectBufferLayout(BoxLayout):
             self.log_debug(f"ERRO ao chamar FFmpeg: {e}")
 
     def obter_caminho_ffmpeg(self):
-        caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
-        if os.path.exists(caminho_local):
+        pasta_dados = App.get_running_app().user_data_dir
+        caminho_destino = os.path.join(pasta_dados, 'ffmpeg')
+
+        # Se ainda não copiou para a pasta tratada, copia do APK
+        if not os.path.exists(caminho_destino):
+            caminho_origem = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
+            if os.path.exists(caminho_origem):
+                try:
+                    shutil.copy(caminho_origem, caminho_destino)
+                except Exception as e:
+                    self.log_debug(f"Erro ao copiar ffmpeg: {e}")
+
+        # Se o arquivo existe na pasta de dados, força a permissão de execução nele
+        if os.path.exists(caminho_destino):
             try:
-                # Força a permissão de execução para o Android não bloquear o binário
-                os.chmod(caminho_local, 0o755)
-            except Exception:
-                pass
-            return caminho_local
+                os.chmod(caminho_destino, 0o755)
+            except Exception as e:
+                self.log_debug(f"Erro ao dar chmod: {e}")
+            return caminho_destino
+
         return 'ffmpeg'
 
     def parar_buffer(self):
