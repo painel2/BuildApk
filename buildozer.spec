@@ -1,10 +1,10 @@
 [app]
 
 # (str) Title of your application
-title = Legendas YT
+title = Twitch Clip App
 
 # (str) Package name
-package.name = legendasyt
+package.name = twitchclipapp
 
 # (str) Package domain (needed for android/ios packaging)
 package.domain = org.meuapp
@@ -19,12 +19,7 @@ source.include_exts = py,png,jpg,kv,atlas
 version = 1.0.0
 
 # (list) Application requirements
-# Comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,youtube-transcript-api,requests,urllib3,certifi,idna,charset_normalizer,defusedxml
-
-# Adicione as novas bibliotecas necessárias para a Twitch e FFmpeg
-requirements = python3,kivy,ffmpeg-python,streamlink
-
+requirements = python3,kivy,ffmpeg-python,streamlink,requests,urllib3,certifi,idna,charset_normalizer
 
 # (str) Supported orientations (landscape, sensorLandscape, portrait or all)
 orientation = portrait
@@ -33,7 +28,7 @@ orientation = portrait
 fullscreen = 0
 
 # (list) Permissions
-android.permissions = INTERNET
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 # (int) Target Android API, should be as high as possible.
 android.api = 33
