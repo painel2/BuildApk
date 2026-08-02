@@ -2,6 +2,8 @@ import os
 import time
 import subprocess
 import threading
+import json
+import urllib.request
 from glob import glob
 
 from kivy.app import App
@@ -66,7 +68,7 @@ class ClipAppLayout(BoxLayout):
 
         # 1. Título
         self.add_widget(Label(
-            text="Twitch Clipper [DEBUG]",
+            text="Twitch Clipper [Direto]",
             font_size='22sp',
             bold=True,
             size_hint_y=None,
@@ -114,7 +116,7 @@ class ClipAppLayout(BoxLayout):
         self.btn_clipar.bind(on_press=self.salvar_clipe)
         self.add_widget(self.btn_clipar)
 
-        # 6. Caixa de Log / Debug na Tela (Mostra o erro exato se falhar)
+        # 6. Caixa de Log / Debug na Tela
         self.add_widget(Label(
             text="Console de Erros / Debug:",
             font_size='12sp',
@@ -129,7 +131,7 @@ class ClipAppLayout(BoxLayout):
             readonly=True,
             multiline=True,
             background_color=(0.05, 0.07, 0.1, 1),
-            foreground_color=(0.2, 1, 0.2, 1),  # Letra verde estilo terminal
+            foreground_color=(0.2, 1, 0.2, 1),
             font_size='12sp'
         )
         self.add_widget(self.console_debug)
@@ -139,7 +141,6 @@ class ClipAppLayout(BoxLayout):
     def log_debug(self, texto):
         def atualizar(dt):
             self.console_debug.text += f"> {texto}\n"
-            # Mantém rolando para baixo
             self.console_debug.cursor = (len(self.console_debug.text), 0)
         Clock.schedule_once(atualizar)
 
@@ -152,14 +153,14 @@ class ClipAppLayout(BoxLayout):
         except Exception as e:
             self.log_debug(f"Erro ao colar: {str(e)}")
 
-    def extrair_url_ou_canal(self, entrada):
+    def extrair_canal(self, entrada):
         entrada = entrada.strip()
         if "twitch.tv/" in entrada:
             canal = entrada.split("twitch.tv/")[-1].split("?")[0].replace("/", "")
-            return f"https://www.twitch.tv/{canal}"
+            return canal.lower()
         elif not entrada.startswith("http"):
-            return f"https://www.twitch.tv/{entrada}"
-        return entrada
+            return entrada.replace("/", "").lower()
+        return entrada.strip("/").split("/")[-1].lower()
 
     def toggle_buffer(self, instance):
         if not self.gravando:
@@ -169,34 +170,47 @@ class ClipAppLayout(BoxLayout):
                 return
 
             self.btn_iniciar.disabled = True
-            url_final = self.extrair_url_ou_canal(entrada)
-            self.log_debug(f"Buscando stream para: {url_final}")
-            threading.Thread(target=self.iniciar_processo, args=(url_final,), daemon=True).start()
+            canal = self.extrair_canal(entrada)
+            self.log_debug(f"Buscando stream para o canal: {canal}")
+            threading.Thread(target=self.iniciar_processo, args=(canal,), daemon=True).start()
         else:
             self.parar_buffer()
 
-    def iniciar_processo(self, url_canal):
+    def iniciar_processo(self, canal):
         try:
-            import streamlink
-            self.log_debug("Inicializando Streamlink...")
+            self.log_debug("Gerando token de acesso à Twitch...")
+            
+            # Requisição leve imitando cliente oficial para pegar a playlist m3u8 sem depender de pacotes complexos
+            client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+            data_gql = json.dumps([{
+                "operationName": "PlaybackAccessToken_Anonymous",
+                "variables": {"isLive": True, "login": canal, "vodID": "", "isVod": False, "playerType": "embed"},
+                "extensions": {"persistedQuery": {"version": 1, "sha256Hash": "0828119ded1c13477966434e15800ff571af1338a09b392484a7032fb3904cef"}}
+            }]).encode('utf-8')
 
-            session = streamlink.Streamlink()
-            session.set_option("http-headers", {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            req = urllib.request.Request("https://gql.twitch.tv/gql", data=data_gql, headers={
+                "Client-ID": client_id,
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             })
 
-            streams = session.streams(url_canal)
-            if "best" not in streams and "live" not in streams:
-                self.log_debug("ERRO: Nenhuma stream encontrada (Live offline?).")
-                Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
-                return
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res_json = json.loads(response.read().decode())
+                stream_data = res_json[0]["data"]["streamPlaybackAccessToken"]
+                token = stream_data["value"]
+                sig = stream_data["signature"]
 
-            stream_url = streams.get("best", streams.get("live")).url
-            self.log_debug("Stream encontrada com sucesso!")
+            self.log_debug("Token obtido! Montando link m3u8...")
+            
+            # Monta a URL m3u8 oficial da Twitch com o token gerado
+            import random
+            sub_ver = random.randint(1000, 9999)
+            stream_url = f"https://usher.ttvnw.net/api/channel/hls/{canal}.m3u8?client_id={client_id}&token={urllib.parse.quote(token)}&sig={sig}&allow_source=true&fast_bread=true"
+
             Clock.schedule_once(lambda dt: self.iniciar_gravacao_ffmpeg(stream_url))
 
         except Exception as e:
-            self.log_debug(f"EXCEÇÃO STREAMLINK: {str(e)}")
+            self.log_debug(f"EXCEÇÃO AO BUSCAR STREAM: {str(e)}")
             Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
 
     def iniciar_gravacao_ffmpeg(self, stream_url):
@@ -216,7 +230,7 @@ class ClipAppLayout(BoxLayout):
             pattern
         ]
 
-        self.log_debug(f"Iniciando FFmpeg...")
+        self.log_debug("Iniciando FFmpeg em segundo plano...")
         self.processo_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.gravando = True
 
@@ -224,7 +238,7 @@ class ClipAppLayout(BoxLayout):
         self.btn_iniciar.custom_bg = (0.3, 0.3, 0.3, 1)
         self.btn_iniciar.disabled = False
         self.btn_clipar.disabled = False
-        self.log_debug("STATUS: Gravando buffer em segundo plano!")
+        self.log_debug("STATUS: Gravando buffer com sucesso!")
 
     def obter_caminho_ffmpeg(self):
         caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
@@ -246,7 +260,7 @@ class ClipAppLayout(BoxLayout):
     def salvar_clipe(self, instance):
         if not self.gravando:
             return
-        self.log_debug("Processando clipe...")
+        self.log_debug("Processando e salvando clipe...")
         threading.Thread(target=self.processar_clipe, daemon=True).start()
 
     def processar_clipe(self):
