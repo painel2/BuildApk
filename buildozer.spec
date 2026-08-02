@@ -6,25 +6,25 @@ title = Twitch Clip App
 # (str) Package name
 package.name = twitchclipapp
 
-# (str) Package domain (needed for android/ios packaging)
+# (str) Package domain
 package.domain = org.meuapp
 
 # (str) Source code where the main.py live
 source.dir = .
 
-# (list) Source files to include (let empty to include all files)
+# (list) Source files to include
 source.include_exts = py,png,jpg,kv,atlas
 
-# (str) Application versioning (method 1)
+# (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements (usando apenas libs compátiveis com Android)
-requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer,ffmpeg
+# (list) Application requirements (Apenas pacotes Python puros e Kivy)
+requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer
 
-# (str) Supported orientations (landscape, sensorLandscape, portrait or all)
+# (str) Supported orientations
 orientation = portrait
 
-# (bool) Indicate if the application should be fullscreen or not
+# (bool) Indicate if the application should be fullscreen
 fullscreen = 0
 
 # (list) Permissions
@@ -54,8 +54,8 @@ android.copy_libs = 1
 
 [buildozer]
 
-# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
+# (int) Log level (0 = error only, 1 = info, 2 = debug)
 log_level = 2
 
-# (int) Display warning if buildozer is run as root (0 = false, 1 = true)
+# (int) Display warning if buildozer is run as root
 warn_on_root = 1
