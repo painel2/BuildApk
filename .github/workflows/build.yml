@@ -22,6 +22,17 @@ jobs:
         with:
           python-version: '3.10'
 
+      # ⚡ CACHE DO BUILDOZER E ANDROID SDK/NDK ⚡
+      - name: Cache Buildozer e SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
       - name: Instalar Dependências do Sistema Linux
         run: |
           sudo apt update
