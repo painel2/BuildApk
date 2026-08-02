@@ -2,11 +2,6 @@ import os
 import time
 import subprocess
 import threading
-import json
-import urllib.request
-import urllib.parse
-import ssl
-import random
 from glob import glob
 
 from kivy.app import App
@@ -26,7 +21,7 @@ class ModernTextInput(TextInput):
         self.foreground_color = (1, 1, 1, 1)
         self.cursor_color = (0.57, 0.21, 0.95, 1)
         self.padding = [15, 15, 15, 15]
-        self.font_size = '15sp'
+        self.font_size = '14sp'
         
         with self.canvas.before:
             Color(0.12, 0.15, 0.22, 1)
@@ -57,7 +52,7 @@ class ModernButton(Button):
         self.bg_rect.size = self.size
 
 
-class ClipAppLayout(BoxLayout):
+class DirectBufferLayout(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
@@ -71,7 +66,7 @@ class ClipAppLayout(BoxLayout):
 
         # 1. Título
         self.add_widget(Label(
-            text="Twitch Clipper [Direto]",
+            text="Buffer Direct .m3u8",
             font_size='22sp',
             bold=True,
             size_hint_y=None,
@@ -79,14 +74,14 @@ class ClipAppLayout(BoxLayout):
             color=(0.7, 0.3, 1, 1)
         ))
 
-        # 2. Input
-        self.input_canal = ModernTextInput(
-            hint_text="twitch.tv/canal",
+        # 2. Input do link .m3u8
+        self.input_url = ModernTextInput(
+            hint_text="Cole a URL .m3u8 aqui...",
             multiline=False,
             size_hint_y=None,
             height=50
         )
-        self.add_widget(self.input_canal)
+        self.add_widget(self.input_url)
 
         # 3. Botão Colar
         self.btn_colar = ModernButton(
@@ -100,7 +95,7 @@ class ClipAppLayout(BoxLayout):
 
         # 4. Botão Iniciar / Parar
         self.btn_iniciar = ModernButton(
-            text="INICIAR BUFFER (5 MIN)",
+            text="INICIAR BUFFER",
             bg_color=(0.4, 0.1, 0.7, 1),
             size_hint_y=None,
             height=50
@@ -110,7 +105,7 @@ class ClipAppLayout(BoxLayout):
 
         # 5. Botão Salvar
         self.btn_clipar = ModernButton(
-            text="SALVAR CLIPE",
+            text="SALVAR CLIPE (DOWNLOADS)",
             bg_color=(0.8, 0.15, 0.15, 1),
             size_hint_y=None,
             height=50
@@ -119,18 +114,17 @@ class ClipAppLayout(BoxLayout):
         self.btn_clipar.bind(on_press=self.salvar_clipe)
         self.add_widget(self.btn_clipar)
 
-        # 6. Caixa de Log / Debug na Tela
+        # 6. Console Log
         self.add_widget(Label(
-            text="Console de Erros / Debug:",
+            text="Status / Console:",
             font_size='12sp',
             size_hint_y=None,
             height=20,
-            color=(0.5, 0.5, 0.6, 1),
-            halign='left'
+            color=(0.5, 0.5, 0.6, 1)
         ))
 
         self.console_debug = TextInput(
-            text="App iniciado. Cole o link e clique em Iniciar.\n",
+            text="App pronto. Cole a URL .m3u8 e clique em Iniciar.\n",
             readonly=True,
             multiline=True,
             background_color=(0.05, 0.07, 0.1, 1),
@@ -138,8 +132,6 @@ class ClipAppLayout(BoxLayout):
             font_size='12sp'
         )
         self.add_widget(self.console_debug)
-
-        Clock.schedule_once(lambda dt: self.colar_link(None), 0.5)
 
     def log_debug(self, texto):
         def atualizar(dt):
@@ -149,86 +141,42 @@ class ClipAppLayout(BoxLayout):
 
     def colar_link(self, instance):
         try:
-            texto_copiado = Clipboard.paste()
-            if texto_copiado and len(texto_copiado.strip()) > 0:
-                self.input_canal.text = texto_copiado.strip()
-                self.log_debug("Link colado da área de transferência.")
+            texto = Clipboard.paste()
+            if texto:
+                self.input_url.text = texto.strip().split('\n')[0]
+                self.log_debug("Link colado.")
         except Exception as e:
-            self.log_debug(f"Erro ao colar: {str(e)}")
-
-    def extrair_canal(self, entrada):
-        entrada = entrada.strip()
-        if "twitch.tv/" in entrada:
-            canal = entrada.split("twitch.tv/")[-1].split("?")[0].replace("/", "")
-            return canal.lower()
-        elif not entrada.startswith("http"):
-            return entrada.replace("/", "").lower()
-        return entrada.strip("/").split("/")[-1].lower()
+            self.log_debug(f"Erro ao colar: {e}")
 
     def toggle_buffer(self, instance):
         if not self.gravando:
-            entrada = self.input_canal.text.strip()
-            if not entrada:
-                self.log_debug("ERRO: Campo de link vazio!")
+            url = self.input_url.text.strip()
+            if not url or not url.startswith("http"):
+                self.log_debug("ERRO: Cole uma URL m3u8 válida (começando com http)!")
                 return
 
-            self.btn_iniciar.disabled = True
-            canal = self.extrair_canal(entrada)
-            self.log_debug(f"Buscando stream para o canal: {canal}")
-            threading.Thread(target=self.iniciar_processo, args=(canal,), daemon=True).start()
+            self.limpar_pasta_buffer()
+            self.iniciar_gravacao_ffmpeg(url)
         else:
             self.parar_buffer()
 
-    def iniciar_processo(self, canal):
+    def limpar_pasta_buffer(self):
         try:
-            self.log_debug("Gerando token de acesso à Twitch...")
-            
-            # IGNORA O ERRO DE SSL NO ANDROID (Certificados desatualizados)
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-
-            # Requisição leve imitando cliente oficial para pegar a playlist m3u8
-            client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko"
-            data_gql = json.dumps([{
-                "operationName": "PlaybackAccessToken_Anonymous",
-                "variables": {"isLive": True, "login": canal, "vodID": "", "isVod": False, "playerType": "embed"},
-                "extensions": {"persistedQuery": {"version": 1, "sha256Hash": "0828119ded1c13477966434e15800ff571af1338a09b392484a7032fb3904cef"}}
-            }]).encode('utf-8')
-
-            req = urllib.request.Request("https://gql.twitch.tv/gql", data=data_gql, headers={
-                "Client-ID": client_id,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            })
-
-            # Passa o contexto SSL customizado para burlar a trava do Android
-            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
-                res_json = json.loads(response.read().decode())
-                stream_data = res_json[0]["data"]["streamPlaybackAccessToken"]
-                token = stream_data["value"]
-                sig = stream_data["signature"]
-
-            self.log_debug("Token obtido! Montando link m3u8...")
-            
-            sub_ver = random.randint(1000, 9999)
-            stream_url = f"https://usher.ttvnw.net/api/channel/hls/{canal}.m3u8?client_id={client_id}&token={urllib.parse.quote(token)}&sig={sig}&allow_source=true&fast_bread=true"
-
-            Clock.schedule_once(lambda dt: self.iniciar_gravacao_ffmpeg(stream_url))
-
+            for f in glob(os.path.join(self.pasta_buffer, "*")):
+                os.remove(f)
+            self.log_debug("Pasta de buffer limpa.")
         except Exception as e:
-            self.log_debug(f"EXCEÇÃO AO BUSCAR STREAM: {str(e)}")
-            Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
+            self.log_debug(f"Aviso ao limpar pasta: {e}")
 
-    def iniciar_gravacao_ffmpeg(self, stream_url):
+    def iniciar_gravacao_ffmpeg(self, url):
         caminho_ffmpeg = self.obter_caminho_ffmpeg()
         pattern = os.path.join(self.pasta_buffer, "segmento_%03d.ts")
 
         cmd = [
             caminho_ffmpeg,
             '-y',
-            '-user_agent', 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36',
-            '-i', stream_url,
+            '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            '-i', url,
             '-c', 'copy',
             '-f', 'segment',
             '-segment_time', '5',
@@ -237,15 +185,17 @@ class ClipAppLayout(BoxLayout):
             pattern
         ]
 
-        self.log_debug("Iniciando FFmpeg em segundo plano...")
-        self.processo_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.gravando = True
+        try:
+            self.log_debug("Iniciando FFmpeg direto no stream...")
+            self.processo_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.gravando = True
 
-        self.btn_iniciar.text = "PARAR BUFFER"
-        self.btn_iniciar.custom_bg = (0.3, 0.3, 0.3, 1)
-        self.btn_iniciar.disabled = False
-        self.btn_clipar.disabled = False
-        self.log_debug("STATUS: Gravando buffer com sucesso!")
+            self.btn_iniciar.text = "PARAR BUFFER"
+            self.btn_iniciar.custom_bg = (0.3, 0.3, 0.3, 1)
+            self.btn_clipar.disabled = False
+            self.log_debug("STATUS: Gravando buffer em tempo real!")
+        except Exception as e:
+            self.log_debug(f"ERRO ao chamar FFmpeg: {e}")
 
     def obter_caminho_ffmpeg(self):
         caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
@@ -259,22 +209,24 @@ class ClipAppLayout(BoxLayout):
             self.processo_ffmpeg = None
 
         self.gravando = False
-        self.btn_iniciar.text = "INICIAR BUFFER (5 MIN)"
+        self.btn_iniciar.text = "INICIAR BUFFER"
         self.btn_iniciar.custom_bg = (0.4, 0.1, 0.7, 1)
         self.btn_clipar.disabled = True
-        self.log_debug("Buffer parado pelo usuário.")
+        self.log_debug("Buffer parado.")
 
     def salvar_clipe(self, instance):
-        if not self.gravando:
+        if not self.gravando and not glob(os.path.join(self.pasta_buffer, "segmento_*.ts")):
+            self.log_debug("Nenhum buffer gravado para salvar.")
             return
-        self.log_debug("Processando e salvando clipe...")
+
+        self.log_debug("Processando clipe...")
         threading.Thread(target=self.processar_clipe, daemon=True).start()
 
     def processar_clipe(self):
         try:
             segmentos = sorted(glob(os.path.join(self.pasta_buffer, "segmento_*.ts")), key=os.path.getmtime)
             if not segmentos:
-                self.log_debug("ERRO: Nenhum segmento .ts gerado ainda.")
+                self.log_debug("ERRO: Nenhum segmento .ts encontrado.")
                 return
 
             concat_list_path = os.path.join(self.pasta_buffer, "files.txt")
@@ -292,16 +244,16 @@ class ClipAppLayout(BoxLayout):
                 '-i', concat_list_path, '-c', 'copy', caminho_saida
             ]
             subprocess.run(cmd_concat, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.log_debug(f"SUCESSO! Clipe salvo em: {caminho_saida}")
+            self.log_debug(f"SUCESSO! Clipe salvo em:\n{caminho_saida}")
         except Exception as e:
-            self.log_debug(f"EXCEÇÃO AO SALVAR: {str(e)}")
+            self.log_debug(f"EXCEÇÃO AO SALVAR: {e}")
 
 
-class TwitchApp(App):
+class DirectApp(App):
     def build(self):
         from kivy.core.window import Window
         Window.clearcolor = (0.07, 0.09, 0.13, 1)
-        return ClipAppLayout()
+        return DirectBufferLayout()
 
     def on_stop(self):
         if hasattr(self.root, 'processo_ffmpeg') and self.root.processo_ffmpeg:
@@ -309,4 +261,4 @@ class TwitchApp(App):
 
 
 if __name__ == '__main__':
-    TwitchApp().run()
+    DirectApp().run()
