@@ -15,14 +15,14 @@ source.dir = .
 # (list) Source files to include
 source.include_exts = py,png,jpg,kv,atlas
 
-# (list) Include patterns (Inclui o executavel do ffmpeg da pasta bin)
+# (list) Include patterns (Inclui o executável do ffmpeg da pasta bin)
 source.include_patterns = bin/*
 
 # (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements (Python3, Kivy, Streamlink e dependências de rede)
-requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer,streamlink
+# (list) Application requirements (ffpyplayer e cython necessários pro Player de Vídeo)
+requirements = python3,kivy,ffpyplayer,requests,urllib3,certifi,idna,charset_normalizer,streamlink
 
 # (str) Supported orientations
 orientation = portrait
