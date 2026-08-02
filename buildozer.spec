@@ -18,8 +18,8 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning (method 1)
 version = 1.0.0
 
-# (list) Application requirements
-requirements = python3,kivy,ffmpeg-python,streamlink,requests,urllib3,certifi,idna,charset_normalizer
+# (list) Application requirements (usando apenas libs compátiveis com Android)
+requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer,ffmpeg
 
 # (str) Supported orientations (landscape, sensorLandscape, portrait or all)
 orientation = portrait
@@ -30,13 +30,13 @@ fullscreen = 0
 # (list) Permissions
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
-# (int) Target Android API, should be as high as possible.
+# (int) Target Android API
 android.api = 33
 
-# (int) Minimum API required. 21 = Android 5.0
+# (int) Minimum API required
 android.minapi = 21
 
-# (str) Android NDK version to use (25b é a mais estável para o GitHub Actions)
+# (str) Android NDK version
 android.ndk = 25b
 
 # (bool) If True, then skip trying to update the Android sdk manager
