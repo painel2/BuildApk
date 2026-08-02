@@ -19,7 +19,6 @@ class TwitchClipperApp(App):
 
     layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
 
-    # Título
     layout.add_widget(
         Label(
             text='🎬 Twitch Clip Buffer (5 Min)',
@@ -30,7 +29,6 @@ class TwitchClipperApp(App):
         )
     )
 
-    # Campo para colar a URL do stream / m3u8
     self.input_url = TextInput(
         hint_text='Cole aqui o link do stream (.m3u8) da live...',
         multiline=False,
@@ -39,7 +37,6 @@ class TwitchClipperApp(App):
     )
     layout.add_widget(self.input_url)
 
-    # Botão 1: Ligar / Desligar Gravação
     self.btn_toggle = Button(
         text='▶️ Iniciar Buffer (Fundo)',
         background_color=(0.2, 0.7, 0.3, 1),
@@ -49,7 +46,6 @@ class TwitchClipperApp(App):
     self.btn_toggle.bind(on_press=self.toggle_buffer)
     layout.add_widget(self.btn_toggle)
 
-    # Botão 2: CLIPAR (Salvar o que já passou)
     self.btn_clip = Button(
         text='✂️ CLIPAR (Salvar últimos 5 min)',
         font_size='18sp',
@@ -61,7 +57,6 @@ class TwitchClipperApp(App):
     self.btn_clip.bind(on_press=self.salvar_clipe)
     layout.add_widget(self.btn_clip)
 
-    # Status
     self.lbl_status = Label(
         text='Status: Parado', font_size='14sp', color=(0.8, 0.8, 0.8, 1)
     )
@@ -71,15 +66,8 @@ class TwitchClipperApp(App):
     return layout
 
   def obter_caminho_ffmpeg(self):
-    """Localiza o executável do FFmpeg que foi embutido na pasta bin/ dentro do APK"""
-    caminho_local = os.path.join(
-        os.path.dirname(__file__), 'bin', 'ffmpeg-arm64'
-    )
-    if not os.path.exists(caminho_local):
-      # Fallback caso a pasta se chame apenas ffmpeg
-      caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
+    caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
 
-    # Da permissão de execução no Android
     try:
       os.chmod(caminho_local, 0o755)
     except Exception:
@@ -88,12 +76,10 @@ class TwitchClipperApp(App):
     return caminho_local
 
   def preparar_pastas(self):
-    """Cria a pasta temporária do buffer e a pasta final de Downloads"""
     self.dir_buffer = os.path.join(self.user_data_dir, 'temp_buffer')
     os.makedirs(self.dir_buffer, exist_ok=True)
     self.arquivo_buffer = os.path.join(self.dir_buffer, 'buffer_5min.mp4')
 
-    # Pasta de destino pública no celular
     self.dir_downloads = '/storage/emulated/0/Download/TwitchClips'
     os.makedirs(self.dir_downloads, exist_ok=True)
 
@@ -118,7 +104,6 @@ class TwitchClipperApp(App):
   def rodar_ffmpeg_loop(self, url):
     ffmpeg_bin = self.obter_caminho_ffmpeg()
 
-    # Comando FFmpeg: grava a stream e limita em 300 segundos (5 minutos)
     cmd = [
         ffmpeg_bin,
         '-y',
