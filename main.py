@@ -4,6 +4,9 @@ import subprocess
 import threading
 import json
 import urllib.request
+import urllib.parse
+import ssl
+import random
 from glob import glob
 
 from kivy.app import App
@@ -180,7 +183,12 @@ class ClipAppLayout(BoxLayout):
         try:
             self.log_debug("Gerando token de acesso à Twitch...")
             
-            # Requisição leve imitando cliente oficial para pegar a playlist m3u8 sem depender de pacotes complexos
+            # IGNORA O ERRO DE SSL NO ANDROID (Certificados desatualizados)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            # Requisição leve imitando cliente oficial para pegar a playlist m3u8
             client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko"
             data_gql = json.dumps([{
                 "operationName": "PlaybackAccessToken_Anonymous",
@@ -194,7 +202,8 @@ class ClipAppLayout(BoxLayout):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             })
 
-            with urllib.request.urlopen(req, timeout=10) as response:
+            # Passa o contexto SSL customizado para burlar a trava do Android
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
                 res_json = json.loads(response.read().decode())
                 stream_data = res_json[0]["data"]["streamPlaybackAccessToken"]
                 token = stream_data["value"]
@@ -202,8 +211,6 @@ class ClipAppLayout(BoxLayout):
 
             self.log_debug("Token obtido! Montando link m3u8...")
             
-            # Monta a URL m3u8 oficial da Twitch com o token gerado
-            import random
             sub_ver = random.randint(1000, 9999)
             stream_url = f"https://usher.ttvnw.net/api/channel/hls/{canal}.m3u8?client_id={client_id}&token={urllib.parse.quote(token)}&sig={sig}&allow_source=true&fast_bread=true"
 
