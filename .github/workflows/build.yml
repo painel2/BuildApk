@@ -5,7 +5,6 @@ on:
 
 jobs:
   build:
-    # Usando 22.04 para evitar conflitos de compilação do Ubuntu 24.04 com o NDK
     runs-on: ubuntu-22.04
 
     steps:
@@ -23,17 +22,33 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      - name: Cache Buildozer local directory
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: ${{ runner.os }}-buildozer-local-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-local-
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake unzip zip
+          sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake unzip zip ccache
           pip install --upgrade pip
           pip install Cython==0.29.33
           pip install https://github.com/kivy/buildozer/archive/master.zip
 
       - name: Install Python packages target
         run: |
-          pip install --target=. requests urllib3 certifi idna charset_normalizer
+          pip install --target=. requests urllib3 certifi idna charset_normalizer streamlink
 
       - name: Ensure FFmpeg binary permissions
         run: |
