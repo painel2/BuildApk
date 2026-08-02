@@ -6,7 +6,7 @@ title = Twitch Clip App
 # (str) Package name
 package.name = twitchclipapp
 
-# (str) Package domain
+# (str) Package domain (needed for android/ios packaging)
 package.domain = org.meuapp
 
 # (str) Source code where the main.py live
@@ -15,10 +15,13 @@ source.dir = .
 # (list) Source files to include
 source.include_exts = py,png,jpg,kv,atlas
 
+# (list) Include patterns (inclui a pasta bin com o ffmpeg prebuilt)
+source.include_patterns = bin/*
+
 # (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements (Apenas pacotes Python puros e Kivy)
+# (list) Application requirements (APENAS Python e Kivy - Sem ffmpeg aqui!)
 requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer
 
 # (str) Supported orientations
