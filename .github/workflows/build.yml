@@ -32,6 +32,11 @@ jobs:
           chmod +x bin/ffmpeg || true
 
       - name: Build APK with Buildozer
+        env:
+          # Desativa os NDKs pre-instalados do GitHub para nao conflitar com o r25b do Buildozer
+          ANDROID_NDK_HOME: ''
+          ANDROID_NDK_ROOT: ''
+          ANDROID_NDK: ''
         run: |
           buildozer -v android debug
 
