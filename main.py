@@ -7,17 +7,15 @@ from glob import glob
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.video import Video
 from kivy.graphics import Color, RoundedRectangle
 
-import streamlink
 
 class ModernTextInput(TextInput):
-    """TextInput com bordas arredondadas e visual moderno"""
+    """Campo de texto customizado com cantos arredondados"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.background_color = (0, 0, 0, 0)
@@ -27,7 +25,7 @@ class ModernTextInput(TextInput):
         self.font_size = '16sp'
         
         with self.canvas.before:
-            Color(0.12, 0.15, 0.22, 1) # Fundo escuro azulado
+            Color(0.12, 0.15, 0.22, 1)
             self.bg_rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[12])
         self.bind(pos=self.update_bg, size=self.update_bg)
 
@@ -37,7 +35,7 @@ class ModernTextInput(TextInput):
 
 
 class ModernButton(Button):
-    """Botão estilizado com cantos arredondados"""
+    """Botão customizado estilizado com fundo colorido e cantos arredondados"""
     def __init__(self, bg_color=(0.57, 0.21, 0.95, 1), **kwargs):
         super().__init__(**kwargs)
         self.background_color = (0, 0, 0, 0)
@@ -60,70 +58,69 @@ class ClipAppLayout(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
-        self.padding = 20
-        self.spacing = 15
+        self.padding = 15
+        self.spacing = 10
 
         self.processo_ffmpeg = None
         self.gravando = False
         self.pasta_buffer = os.path.join(App.get_running_app().user_data_dir, "buffer")
         os.makedirs(self.pasta_buffer, exist_ok=True)
 
-        # 1. Título do App
+        # 1. Título do Aplicativo
         self.add_widget(Label(
             text="[b]🎬 Twitch Clipper[/b]",
             markup=True,
-            font_size='24sp',
+            font_size='22sp',
             size_hint_y=None,
-            height=40,
+            height=35,
             color=(0.7, 0.3, 1, 1)
         ))
 
-        # 2. Player de Vídeo Nativo (Mostra a live ao vivo pelo link do Streamlink)
+        # 2. Player de Vídeo Nativo
         self.video_player = Video(
             source="",
             state='stop',
             options={'allow_stretch': True},
             size_hint=(1, 1)
         )
-        # Deixamos o player oculto ou com fundo preto até iniciar
         self.add_widget(self.video_player)
 
-        # 3. Input do Canal
+        # 3. Campo de Entrada para o Nome do Canal
         self.input_canal = ModernTextInput(
             hint_text="Nome do canal (ex: facada)",
             multiline=False,
             size_hint_y=None,
-            height=55
+            height=50
         )
         self.add_widget(self.input_canal)
 
         # 4. Botão Iniciar / Parar Buffer
         self.btn_iniciar = ModernButton(
             text="▶ INICIAR BUFFER (5 MIN)",
-            bg_color=(0.4, 0.1, 0.7, 1), # Roxo Twitch
+            bg_color=(0.4, 0.1, 0.7, 1),
             size_hint_y=None,
             height=55
         )
         self.btn_iniciar.bind(on_press=self.toggle_buffer)
         self.add_widget(self.btn_iniciar)
 
-        # 5. Botão Salvar Clipe
+        # 5. Botão de Salvar Clipe
         self.btn_clipar = ModernButton(
             text="✂️ SALVAR CLIPE",
-            bg_color=(0.8, 0.15, 0.15, 1), # Vermelho
+            bg_color=(0.8, 0.15, 0.15, 1),
             size_hint_y=None,
-            height=60
+            height=55
         )
         self.btn_clipar.disabled = True
         self.btn_clipar.bind(on_press=self.salvar_clipe)
         self.add_widget(self.btn_clipar)
 
-        # 6. Label de Status
+        # 6. Caixa/Label de Status
         self.status_label = Label(
             text="Digite o canal e clique em Iniciar.",
             font_size='13sp',
             size_hint_y=None,
-            height=35,
+            height=30,
             color=(0.7, 0.7, 0.7, 1)
         )
         self.add_widget(self.status_label)
@@ -152,6 +149,9 @@ class ClipAppLayout(BoxLayout):
 
     def iniciar_processo(self, canal):
         try:
+            # Importa o streamlink dentro da thread para garantir abertura rápida do app
+            import streamlink
+
             url_canal = f"https://www.twitch.tv/{canal}" if not canal.startswith("http") else canal
             session = streamlink.Streamlink()
             session.set_option("http-headers", {
@@ -164,10 +164,7 @@ class ClipAppLayout(BoxLayout):
                 Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
                 return
 
-            # Pega o link .m3u8 limpo gerado pelo Streamlink
             stream_url = streams.get("best", streams.get("live")).url
-            
-            # Atualiza o player de vídeo do Kivy com a URL direto da live!
             Clock.schedule_once(lambda dt: self.atualizar_player_e_gravacao(stream_url))
 
         except Exception as e:
@@ -175,11 +172,12 @@ class ClipAppLayout(BoxLayout):
             Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
 
     def atualizar_player_e_gravacao(self, stream_url):
-        # Inicia o Player de Vídeo na tela
-        self.video_player.source = stream_url
-        self.video_player.state = 'play'
+        try:
+            self.video_player.source = stream_url
+            self.video_player.state = 'play'
+        except Exception as e:
+            print(f"Erro ao carregar no player: {e}")
 
-        # Inicia o FFmpeg em background gravando os pedaços (buffer circular)
         caminho_ffmpeg = self.obter_caminho_ffmpeg()
         pattern = os.path.join(self.pasta_buffer, "segmento_%03d.ts")
 
@@ -254,7 +252,6 @@ class ClipAppLayout(BoxLayout):
 
 class TwitchApp(App):
     def build(self):
-        # Fundo geral da tela escuro
         from kivy.core.window import Window
         Window.clearcolor = (0.07, 0.09, 0.13, 1)
         return ClipAppLayout()
