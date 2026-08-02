@@ -1,155 +1,155 @@
 import os
-import shutil
+import time
 import subprocess
 import threading
-from datetime import datetime
+from glob import glob
+from flask import Flask, render_template, request, jsonify
 
+import streamlink
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
+from kivy.utils import platform
 
+# Cria o servidor Flask interno
+server = Flask(__name__)
 
-class TwitchClipperApp(App):
+pasta_buffer = ""
+processo_ffmpeg = None
+gravando = False
 
-  def build(self):
-    self.rodando_buffer = False
-    self.processo_ffmpeg = None
-
-    layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
-
-    layout.add_widget(
-        Label(
-            text='🎬 Twitch Clip Buffer (5 Min)',
-            font_size='22sp',
-            bold=True,
-            size_hint_y=None,
-            height=50,
-        )
-    )
-
-    self.input_url = TextInput(
-        hint_text='Cole aqui o link do stream (.m3u8) da live...',
-        multiline=False,
-        size_hint_y=None,
-        height=50,
-    )
-    layout.add_widget(self.input_url)
-
-    self.btn_toggle = Button(
-        text='▶️ Iniciar Buffer (Fundo)',
-        background_color=(0.2, 0.7, 0.3, 1),
-        size_hint_y=None,
-        height=60,
-    )
-    self.btn_toggle.bind(on_press=self.toggle_buffer)
-    layout.add_widget(self.btn_toggle)
-
-    self.btn_clip = Button(
-        text='✂️ CLIPAR (Salvar últimos 5 min)',
-        font_size='18sp',
-        bold=True,
-        background_color=(0.9, 0.3, 0.2, 1),
-        size_hint_y=None,
-        height=80,
-    )
-    self.btn_clip.bind(on_press=self.salvar_clipe)
-    layout.add_widget(self.btn_clip)
-
-    self.lbl_status = Label(
-        text='Status: Parado', font_size='14sp', color=(0.8, 0.8, 0.8, 1)
-    )
-    layout.add_widget(self.lbl_status)
-
-    self.preparar_pastas()
-    return layout
-
-  def obter_caminho_ffmpeg(self):
+def obter_caminho_ffmpeg():
     caminho_local = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
+    if os.path.exists(caminho_local):
+        return caminho_local
+    return 'ffmpeg'
+
+@server.route('/')
+def index():
+    return render_template('index.html')
+
+@server.route('/api/iniciar', methods=['POST'])
+def iniciar_buffer():
+    global processo_ffmpeg, gravando, pasta_buffer
+    
+    dados = request.get_json()
+    canal = dados.get('canal', '').strip()
+    
+    if not canal:
+        return jsonify({'status': 'erro', 'mensagem': 'Digite o nome do canal!'}), 400
 
     try:
-      os.chmod(caminho_local, 0o755)
-    except Exception:
-      pass
+        url_canal = f"https://www.twitch.tv/{canal}" if not canal.startswith("http") else canal
+        session = streamlink.Streamlink()
+        session.set_option("http-headers", {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
 
-    return caminho_local
+        streams = session.streams(url_canal)
+        if "best" not in streams and "live" not in streams:
+            return jsonify({'status': 'erro', 'mensagem': 'Live offline ou canal não encontrado!'}), 404
 
-  def preparar_pastas(self):
-    self.dir_buffer = os.path.join(self.user_data_dir, 'temp_buffer')
-    os.makedirs(self.dir_buffer, exist_ok=True)
-    self.arquivo_buffer = os.path.join(self.dir_buffer, 'buffer_5min.mp4')
+        stream_url = streams.get("best", streams.get("live")).url
+        
+        caminho_ffmpeg = obter_caminho_ffmpeg()
+        pattern = os.path.join(pasta_buffer, "segmento_%03d.ts")
 
-    self.dir_downloads = '/storage/emulated/0/Download/TwitchClips'
-    os.makedirs(self.dir_downloads, exist_ok=True)
+        cmd = [
+            caminho_ffmpeg,
+            '-y',
+            '-user_agent', 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36',
+            '-i', stream_url,
+            '-c', 'copy',
+            '-f', 'segment',
+            '-segment_time', '5',
+            '-segment_wrap', '60',
+            '-reset_timestamps', '1',
+            pattern
+        ]
 
-  def toggle_buffer(self, instance):
-    if not self.rodando_buffer:
-      url = self.input_url.text.strip()
-      if not url:
-        self.lbl_status.text = '⚠️ Cole o link do stream (.m3u8) primeiro!'
-        return
+        processo_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        gravando = True
+        return jsonify({'status': 'sucesso', 'mensagem': f'Buffer iniciado para {canal}!'})
 
-      self.rodando_buffer = True
-      self.btn_toggle.text = '⏹️ Parar Gravador'
-      self.btn_toggle.background_color = (0.7, 0.2, 0.2, 1)
-      self.lbl_status.text = '🟢 Buffer Ativo! Gravando em loop...'
-
-      threading.Thread(
-          target=self.rodar_ffmpeg_loop, args=(url,), daemon=True
-      ).start()
-    else:
-      self.parar_buffer()
-
-  def rodar_ffmpeg_loop(self, url):
-    ffmpeg_bin = self.obter_caminho_ffmpeg()
-
-    cmd = [
-        ffmpeg_bin,
-        '-y',
-        '-i',
-        url,
-        '-c',
-        'copy',
-        '-t',
-        '300',
-        self.arquivo_buffer,
-    ]
-
-    while self.rodando_buffer:
-      self.processo_ffmpeg = subprocess.Popen(
-          cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-      )
-      self.processo_ffmpeg.wait()
-
-  def parar_buffer(self):
-    self.rodando_buffer = False
-    if self.processo_ffmpeg:
-      self.processo_ffmpeg.terminate()
-    self.btn_toggle.text = '▶️ Iniciar Buffer (Fundo)'
-    self.btn_toggle.background_color = (0.2, 0.7, 0.3, 1)
-    self.lbl_status.text = '🔴 Buffer parado.'
-
-  def salvar_clipe(self, instance):
-    if (
-        not os.path.exists(self.arquivo_buffer)
-        or os.path.getsize(self.arquivo_buffer) == 0
-    ):
-      self.lbl_status.text = (
-          '⚠️ Aguarde alguns segundos para o buffer acumular vídeo...'
-      )
-      return
-
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    nome_arquivo = f'Clipe_{timestamp}.mp4'
-    destino = os.path.join(self.dir_downloads, nome_arquivo)
-
-    try:
-      shutil.copy(self.arquivo_buffer, destino)
-      self.lbl_status.text = '✅ Clipe salvo em Downloads/TwitchClips!'
     except Exception as e:
-      self.lbl_status.text = f'❌ Erro ao salvar: {str(e)}'
+        return jsonify({'status': 'erro', 'mensagem': str(e)}), 500
 
+@server.route('/api/parar', methods=['POST'])
+def parar_buffer():
+    global processo_ffmpeg, gravando
+    if processo_ffmpeg:
+        processo_ffmpeg.terminate()
+        processo_ffmpeg = None
+    gravando = False
+    return jsonify({'status': 'sucesso', 'mensagem': 'Buffer interrompido.'})
+
+@server.route('/api/clipar', methods=['POST'])
+def clipar():
+    global pasta_buffer, gravando
+    if not gravando:
+        return jsonify({'status': 'erro', 'mensagem': 'O buffer não está ativo!'}), 400
+
+    try:
+        segmentos = sorted(glob(os.path.join(pasta_buffer, "segmento_*.ts")), key=os.path.getmtime)
+        if not segmentos:
+            return jsonify({'status': 'erro', 'mensagem': 'Nenhum segmento capturado ainda.'}), 400
+
+        concat_list_path = os.path.join(pasta_buffer, "files.txt")
+        with open(concat_list_path, "w") as f:
+            for seg in segmentos:
+                f.write(f"file '{seg}'\n")
+
+        pasta_download = "/sdcard/Download" if os.path.exists("/sdcard/Download") else pasta_buffer
+        nome_arquivo = f"clipe_twitch_{int(time.time())}.mp4"
+        caminho_saida = os.path.join(pasta_download, nome_arquivo)
+
+        caminho_ffmpeg = obter_caminho_ffmpeg()
+        cmd_concat = [
+            caminho_ffmpeg, '-y', '-f', 'concat', '-safe', '0',
+            '-i', concat_list_path, '-c', 'copy', caminho_saida
+        ]
+        subprocess.run(cmd_concat, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        return jsonify({'status': 'sucesso', 'mensagem': f'Clipe salvo em: {nome_arquivo}'})
+    except Exception as e:
+        return jsonify({'status': 'erro', 'mensagem': str(e)}), 500
+
+
+# Inicialização da WebView no Kivy
+from kivy.uix.boxlayout import BoxLayout
+
+class WebApp(App):
+    def build(self):
+        global pasta_buffer
+        pasta_buffer = os.path.join(self.user_data_dir, "buffer")
+        os.makedirs(pasta_buffer, exist_ok=True)
+
+        # Inicia o Flask em uma Thread separada
+        threading.Thread(target=lambda: server.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False), daemon=True).start()
+
+        # No Android, usa a WebView nativa via pyjnius
+        if platform == 'android':
+            from jnius import autoclass
+            from android.runnable import run_on_ui_thread
+
+            WebView = autoclass('android.webkit.WebView')
+            WebViewClient = autoclass('android.webkit.WebViewClient')
+            activity = autoclass('org.kivy.android.PythonActivity').mActivity
+
+            @run_on_ui_thread
+            def create_webview():
+                webview = WebView(activity)
+                webview.getSettings().setJavaScriptEnabled(True)
+                webview.getSettings().setDomStorageEnabled(True)
+                webview.setWebViewClient(WebViewClient())
+                webview.loadUrl('http://127.0.0.1:5000')
+                activity.setContentView(webview)
+
+            create_webview()
+            return BoxLayout()
+        else:
+            # No PC para testes
+            import webbrowser
+            webbrowser.open('http://127.0.0.1:5000')
+            return BoxLayout()
 
 if __name__ == '__main__':
-  TwitchClipperApp().run()
+    WebApp().run()
