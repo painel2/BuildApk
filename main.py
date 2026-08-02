@@ -10,7 +10,6 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.uix.video import Video
 from kivy.graphics import Color, RoundedRectangle
 
 
@@ -35,7 +34,7 @@ class ModernTextInput(TextInput):
 
 
 class ModernButton(Button):
-    """Botão customizado estilizado com fundo colorido e cantos arredondados"""
+    """Botão customizado com cantos arredondados e cor personalizada"""
     def __init__(self, bg_color=(0.57, 0.21, 0.95, 1), **kwargs):
         super().__init__(**kwargs)
         self.background_color = (0, 0, 0, 0)
@@ -58,39 +57,38 @@ class ClipAppLayout(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
-        self.padding = 15
-        self.spacing = 10
+        self.padding = 20
+        self.spacing = 15
 
         self.processo_ffmpeg = None
         self.gravando = False
         self.pasta_buffer = os.path.join(App.get_running_app().user_data_dir, "buffer")
         os.makedirs(self.pasta_buffer, exist_ok=True)
 
-        # 1. Título do Aplicativo
+        # 1. Título do App
         self.add_widget(Label(
             text="[b]🎬 Twitch Clipper[/b]",
             markup=True,
-            font_size='22sp',
+            font_size='24sp',
             size_hint_y=None,
-            height=35,
+            height=40,
             color=(0.7, 0.3, 1, 1)
         ))
 
-        # 2. Player de Vídeo Nativo
-        self.video_player = Video(
-            source="",
-            state='stop',
-            options={'allow_stretch': True},
-            size_hint=(1, 1)
-        )
-        self.add_widget(self.video_player)
+        # 2. Espaçador / Área central limpa
+        self.add_widget(Label(
+            text="Digite o nome do canal abaixo para capturar os últimos 5 minutos de live.",
+            font_size='14sp',
+            color=(0.6, 0.6, 0.7, 1),
+            halign='center'
+        ))
 
         # 3. Campo de Entrada para o Nome do Canal
         self.input_canal = ModernTextInput(
             hint_text="Nome do canal (ex: facada)",
             multiline=False,
             size_hint_y=None,
-            height=50
+            height=55
         )
         self.add_widget(self.input_canal)
 
@@ -99,7 +97,7 @@ class ClipAppLayout(BoxLayout):
             text="▶ INICIAR BUFFER (5 MIN)",
             bg_color=(0.4, 0.1, 0.7, 1),
             size_hint_y=None,
-            height=55
+            height=60
         )
         self.btn_iniciar.bind(on_press=self.toggle_buffer)
         self.add_widget(self.btn_iniciar)
@@ -109,7 +107,7 @@ class ClipAppLayout(BoxLayout):
             text="✂️ SALVAR CLIPE",
             bg_color=(0.8, 0.15, 0.15, 1),
             size_hint_y=None,
-            height=55
+            height=60
         )
         self.btn_clipar.disabled = True
         self.btn_clipar.bind(on_press=self.salvar_clipe)
@@ -117,10 +115,10 @@ class ClipAppLayout(BoxLayout):
 
         # 6. Caixa/Label de Status
         self.status_label = Label(
-            text="Digite o canal e clique em Iniciar.",
+            text="Status: Aguardando...",
             font_size='13sp',
             size_hint_y=None,
-            height=30,
+            height=35,
             color=(0.7, 0.7, 0.7, 1)
         )
         self.add_widget(self.status_label)
@@ -142,14 +140,13 @@ class ClipAppLayout(BoxLayout):
                 return
 
             self.btn_iniciar.disabled = True
-            self.log(f"🔎 Buscando link da live de {canal}...")
+            self.log(f"🔎 Buscando stream da live de {canal}...")
             threading.Thread(target=self.iniciar_processo, args=(canal,), daemon=True).start()
         else:
             self.parar_buffer()
 
     def iniciar_processo(self, canal):
         try:
-            # Importa o streamlink dentro da thread para garantir abertura rápida do app
             import streamlink
 
             url_canal = f"https://www.twitch.tv/{canal}" if not canal.startswith("http") else canal
@@ -165,19 +162,13 @@ class ClipAppLayout(BoxLayout):
                 return
 
             stream_url = streams.get("best", streams.get("live")).url
-            Clock.schedule_once(lambda dt: self.atualizar_player_e_gravacao(stream_url))
+            Clock.schedule_once(lambda dt: self.iniciar_gravacao_ffmpeg(stream_url))
 
         except Exception as e:
             self.log(f"❌ Erro: {str(e)}")
             Clock.schedule_once(lambda dt: setattr(self.btn_iniciar, 'disabled', False))
 
-    def atualizar_player_e_gravacao(self, stream_url):
-        try:
-            self.video_player.source = stream_url
-            self.video_player.state = 'play'
-        except Exception as e:
-            print(f"Erro ao carregar no player: {e}")
-
+    def iniciar_gravacao_ffmpeg(self, stream_url):
         caminho_ffmpeg = self.obter_caminho_ffmpeg()
         pattern = os.path.join(self.pasta_buffer, "segmento_%03d.ts")
 
@@ -201,15 +192,12 @@ class ClipAppLayout(BoxLayout):
         self.btn_iniciar.custom_bg = (0.3, 0.3, 0.3, 1)
         self.btn_iniciar.disabled = False
         self.btn_clipar.disabled = False
-        self.log("🟢 Gravando buffer e reproduzindo live!")
+        self.log("🟢 Buffer ativo! Gravando em segundo plano.")
 
     def parar_buffer(self):
         if self.processo_ffmpeg:
             self.processo_ffmpeg.terminate()
             self.processo_ffmpeg = None
-
-        self.video_player.state = 'stop'
-        self.video_player.source = ""
 
         self.gravando = False
         self.btn_iniciar.text = "▶ INICIAR BUFFER (5 MIN)"
@@ -220,7 +208,7 @@ class ClipAppLayout(BoxLayout):
     def salvar_clipe(self, instance):
         if not self.gravando:
             return
-        self.log("✂️ Salvando clipe...")
+        self.log("✂️ Processando e salvando clipe...")
         threading.Thread(target=self.processar_clipe, daemon=True).start()
 
     def processar_clipe(self):
@@ -245,9 +233,9 @@ class ClipAppLayout(BoxLayout):
                 '-i', concat_list_path, '-c', 'copy', caminho_saida
             ]
             subprocess.run(cmd_concat, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.log(f"🎉 Clipe salvo em Downloads!")
+            self.log(f"🎉 Clipe salvo em Downloads/{nome_arquivo}")
         except Exception as e:
-            self.log(f"❌ Erro ao salvar: {str(e)}")
+            self.log(f"❌ Erro ao salvar clipe: {str(e)}")
 
 
 class TwitchApp(App):
