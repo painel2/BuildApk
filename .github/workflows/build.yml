@@ -11,25 +11,26 @@ jobs:
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar Dependências de Compilação do Linux
+      - name: Instalar Dependências do Sistema Linux
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libreadline-dev libsqlite3-dev libgdbm-dev libdb5.3-dev libbz2-dev libexpat1-dev liblzma-dev tk-dev libffi-dev
           pip install --upgrade buildozer cython
 
-      - name: Aceitar Licenças do Android SDK e Gerar APK
+      - name: Gerar APK com Buildozer
         run: |
-          # Cria a pasta do SDK e aceita as licenças automaticamente
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo -e "\n89339e07016673736373d512300f33d19e94da39\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a637b37ea9d543059f204968031059f88" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          
-          # Executa o Buildozer aceitando qualquer confirmação interativa
-          yes | buildozer -v android debug
+          buildozer -v android debug
 
       - name: Upload do APK como Artefato
         uses: actions/upload-artifact@v4
