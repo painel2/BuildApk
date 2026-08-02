@@ -21,8 +21,8 @@ source.include_patterns = bin/*
 # (str) Application versioning
 version = 1.0.0
 
-# (list) Application requirements (cython + ffpyplayer para o player de vídeo nativo)
-requirements = python3,kivy,cython,ffpyplayer,requests,urllib3,certifi,idna,charset_normalizer,streamlink
+# (list) Application requirements
+requirements = python3,kivy,requests,urllib3,certifi,idna,charset_normalizer,streamlink
 
 # (str) Supported orientations
 orientation = portrait
