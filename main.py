@@ -1,106 +1,148 @@
 import os
 import shutil
 import threading
-import time
 import subprocess
 from datetime import datetime
 
-# URL do fluxo da Twitch (.m3u8) ou da live
-# Obs: Para testes rápidos, você pode usar qualquer URL de stream HLS (.m3u8)
-STREAM_URL = "SUA_URL_HLS_M3U8_AQUI" 
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.clock import Clock
 
-BUFFER_DIR = "./temp_buffer"
-CLIPS_DIR = "./meus_clipes"
-BUFFER_FILE = os.path.join(BUFFER_DIR, "buffer_5min.mp4")
+class TwitchClipApp(App):
+    def build(self):
+        self.rodando_buffer = False
+        self.processo_ffmpeg = None
 
-# Flags de controle de threads
-rodando = True
+        # Layout Principal
+        layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
 
-def preparar_pastas():
-    """Cria as pastas necessárias para o buffer e os clipes salvos."""
-    os.makedirs(BUFFER_DIR, exist_ok=True)
-    os.makedirs(CLIPS_DIR, exist_ok=True)
+        # Título
+        layout.add_widget(Label(
+            text="🎬 Twitch Clip Buffer (5 Min)", 
+            font_size='22sp', 
+            bold=True,
+            size_hint_y=None, 
+            height=50
+        ))
 
-def iniciar_buffer_5min(stream_url):
-    """
-    Roda o FFmpeg em background gravando os últimos 5 minutos (300 segundos)
-    de forma circular no arquivo de buffer temporário.
-    """
-    global rodando
-    preparar_pastas()
-    
-    # Comando FFmpeg:
-    # -y: sobrescreve sem pedir
-    # -i: URL de entrada do vídeo
-    # -c copy: copia o formato nativo sem gastar CPU recodificando
-    # -t 300: limita a duração contínua a 300 segundos (5 minutos)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", stream_url,
-        "-c", "copy",
-        "-t", "300",
-        BUFFER_FILE
-    ]
+        # Campo de Texto para colocar a URL .m3u8 da live
+        self.input_url = TextInput(
+            hint_text="Cole o link .m3u8 do stream da Twitch aqui...",
+            multiline=False,
+            size_hint_y=None,
+            height=50
+        )
+        layout.add_widget(self.input_url)
 
-    print("🟢 [Buffer] Iniciando gravação em segundo plano...")
-    
-    # Executa o processo do FFmpeg
-    processo = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
-    while rodando:
-        # Se o processo terminar por limite de tempo, reinicia o loop do buffer
-        if processo.poll() is not None:
-            processo = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1)
+        # Botão para Iniciar/Parar Buffer
+        self.btn_toggle_buffer = Button(
+            text="▶️ Iniciar Gravador de Buffer",
+            background_color=(0.2, 0.7, 0.3, 1),
+            size_hint_y=None,
+            height=60
+        )
+        self.btn_toggle_buffer.bind(on_press=self.toggle_buffer)
+        layout.add_widget(self.btn_toggle_buffer)
 
-    # Finaliza o processo ao fechar o app
-    processo.terminate()
-    print("🔴 [Buffer] Gravação encerrada.")
+        # Botão Principal: SALVAR CLIPE
+        self.btn_clip = Button(
+            text="✂️ SALVAR ÚLTIMOS 5 MINUTOS",
+            font_size='18sp',
+            bold=True,
+            background_color=(0.9, 0.3, 0.2, 1),
+            size_hint_y=None,
+            height=80
+        )
+        self.btn_clip.bind(on_press=self.salvar_clipe)
+        layout.add_widget(self.btn_clip)
 
-def salvar_clipe():
-    """Copia o buffer atual de 5 minutos para a pasta de clipes salvos."""
-    if not os.path.exists(BUFFER_FILE) or os.path.getsize(BUFFER_FILE) == 0:
-        print("\n⚠️ [Erro] O buffer ainda está sendo gerado. Aguarde alguns segundos...")
-        return
+        # Label de Status
+        self.lbl_status = Label(
+            text="Status: Aguardando início...",
+            font_size='14sp',
+            color=(0.8, 0.8, 0.8, 1)
+        )
+        layout.add_widget(self.lbl_status)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    nome_clipe = f"Clipe_Twitch_{timestamp}.mp4"
-    caminho_destino = os.path.join(CLIPS_DIR, nome_clipe)
+        # Define pastas temporárias e de salvamento
+        self.preparar_pastas()
 
-    try:
-        # Faz a cópia instantânea do arquivo de buffer sem pausar a gravação
-        shutil.copy(BUFFER_FILE, caminho_destino)
-        print(f"\n✅ [Sucesso] Clipe de 5 minutos salvo em: {caminho_destino}")
-    except Exception as e:
-        print(f"\n❌ [Erro ao salvar clipe]: {e}")
+        return layout
 
-# ==========================================
-# SIMULAÇÃO DA INTERFACE DO APP (MAIN)
-# ==========================================
+    def preparar_pastas(self):
+        """Define e cria a pasta de armazenamento dos clipes no Android/PC."""
+        self.dir_buffer = os.path.join(self.user_data_dir, "temp_buffer")
+        os.makedirs(self.dir_buffer, exist_ok=True)
+        self.arquivo_buffer = os.path.join(self.dir_buffer, "buffer_5min.mp4")
+
+        # No Android, tenta salvar na pasta Download pública
+        try:
+            from android.storage import primary_external_storage_path
+            caminho_base = primary_external_storage_path()
+            self.dir_clipes = os.path.join(caminho_base, "Download", "TwitchClips")
+        except ImportError:
+            # Fallback para PC/Desktop
+            self.dir_clipes = os.path.join(os.path.expanduser("~"), "Downloads", "TwitchClips")
+
+        os.makedirs(self.dir_clipes, exist_ok=True)
+
+    def toggle_buffer(self, instance):
+        if not self.rodando_buffer:
+            url = self.input_url.text.strip()
+            if not url:
+                self.lbl_status.text = "⚠️ Insira a URL .m3u8 da live primeiro!"
+                return
+
+            self.rodando_buffer = True
+            self.btn_toggle_buffer.text = "⏹️ Parar Gravador"
+            self.btn_toggle_buffer.background_color = (0.7, 0.2, 0.2, 1)
+            self.lbl_status.text = "🟢 Gravação circular de 5min ATIVA..."
+
+            # Inicia o FFmpeg em uma thread separada
+            threading.Thread(target=self.rodar_ffmpeg_loop, args=(url,), daemon=True).start()
+        else:
+            self.parar_buffer()
+
+    def rodar_ffmpeg_loop(self, url):
+        """Roda o FFmpeg mantendo no máximo 300 segundos (5 min) no arquivo."""
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", url,
+            "-c", "copy",
+            "-t", "300",
+            self.arquivo_buffer
+        ]
+
+        while self.rodando_buffer:
+            self.processo_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.processo_ffmpeg.wait()
+
+    def parar_buffer(self):
+        self.rodando_buffer = False
+        if self.processo_ffmpeg:
+            self.processo_ffmpeg.terminate()
+        self.btn_toggle_buffer.text = "▶️ Iniciar Gravador de Buffer"
+        self.btn_toggle_buffer.background_color = (0.2, 0.7, 0.3, 1)
+        self.lbl_status.text = "🔴 Gravador parado."
+
+    def salvar_clipe(self, instance):
+        """Copia o buffer de 5min para a pasta Download do celular."""
+        if not os.path.exists(self.arquivo_buffer) or os.path.getsize(self.arquivo_buffer) == 0:
+            self.lbl_status.text = "⚠️ Aguarde alguns segundos até o buffer gerar dados..."
+            return
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        nome_arquivo = f"Clipe_Twitch_{timestamp}.mp4"
+        destino = os.path.join(self.dir_clipes, nome_arquivo)
+
+        try:
+            shutil.copy(self.arquivo_buffer, destino)
+            self.lbl_status.text = f"✅ Clipe salvo em Downloads/TwitchClips!"
+        except Exception as e:
+            self.lbl_status.text = f"❌ Erro ao salvar: {str(e)}"
+
 if __name__ == "__main__":
-    preparar_pastas()
-
-    # 1. Inicia a Thread do Buffer (Segunda tarefa em paralelo)
-    thread_buffer = threading.Thread(target=iniciar_buffer_5min, args=(STREAM_URL,), daemon=True)
-    thread_buffer.start()
-
-    print("\n==============================================")
-    print(" 🎬 Player da Live Ativo (Assistindo...) ")
-    print("==============================================")
-    print(" Digite 'c' para SALVAR OS ÚLTIMOS 5 MINUTOS")
-    print(" Digite 's' para SAIR")
-    print("==============================================\n")
-
-    # 2. Thread Principal (Menu interativo / Botões da tela)
-    try:
-        while True:
-            opcao = input("Ação [c = Clipar / s = Sair]: ").strip().lower()
-            if opcao == 'c':
-                salvar_clipe()
-            elif opcao == 's':
-                print("Encerrando aplicativo...")
-                rodando = False
-                break
-    except KeyboardInterrupt:
-        rodando = False
-
+    TwitchClipApp().run()
