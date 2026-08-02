@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Clipper</title>
+    <!-- Tailwind CSS para design moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-between p-6 font-sans">
+
+    <!-- Header -->
+    <div class="text-center mt-4">
+        <h1 class="text-3xl font-extrabold text-purple-500 tracking-wide flex items-center justify-center gap-2">
+            🎬 Twitch Clipper
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">Grave e salve clipes instantâneos de lives</p>
+    </div>
+
+    <!-- Main Card -->
+    <div class="bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 my-auto">
+        
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Canal da Twitch</label>
+        <input type="text" id="canal" placeholder="Ex: facada" 
+               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all mb-4 text-lg">
+
+        <!-- Botão Iniciar / Parar -->
+        <button id="btnBuffer" onclick="toggleBuffer()" 
+                class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-purple-600/30 active:scale-95 mb-3 text-lg">
+            ▶ INICIAR BUFFER (5 MIN)
+        </button>
+
+        <!-- Botão Clipar -->
+        <button id="btnClipar" onclick="salvarClipe()" disabled
+                class="w-full bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-red-600/30 active:scale-95 flex items-center justify-center gap-2 text-lg">
+            ✂️ SALVAR CLIPE
+        </button>
+
+        <!-- Box de Status -->
+        <div id="statusBox" class="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs text-slate-300 min-h-[50px] flex items-center justify-center text-center">
+            Digite o nome do canal para começar.
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-xs text-slate-500 mb-2">
+        Powered by Python, FFmpeg & Webview
+    </div>
+
+    <script>
+        let gravando = false;
+
+        async function toggleBuffer() {
+            const canal = document.getElementById('canal').value.trim();
+            const btnBuffer = document.getElementById('btnBuffer');
+            const btnClipar = document.getElementById('btnClipar');
+            const statusBox = document.getElementById('statusBox');
+
+            if (!gravando) {
+                if (!canal) {
+                    statusBox.innerHTML = '<span class="text-red-400">⚠️ Digite o nome de um canal!</span>';
+                    return;
+                }
+
+                statusBox.innerHTML = '🔎 Buscando transmissão...';
+                btnBuffer.disabled = true;
+
+                const response = await fetch('/api/iniciar', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({canal: canal})
+                });
+
+                const data = await response.json();
+                btnBuffer.disabled = false;
+
+                if (response.ok) {
+                    gravando = true;
+                    btnBuffer.innerText = '⏹ PARAR BUFFER';
+                    btnBuffer.classList.replace('bg-purple-600', 'bg-slate-700');
+                    btnClipar.disabled = false;
+                    statusBox.innerHTML = '<span class="text-green-400">🟢 Buffer Ativo! Gravando em segundo plano.</span>';
+                } else {
+                    statusBox.innerHTML = `<span class="text-red-400">❌ ${data.mensagem}</span>`;
+                }
+            } else {
+                await fetch('/api/parar', {method: 'POST'});
+                gravando = false;
+                btnBuffer.innerText = '▶ INICIAR BUFFER (5 MIN)';
+                btnBuffer.classList.replace('bg-slate-700', 'bg-purple-600');
+                btnClipar.disabled = true;
+                statusBox.innerHTML = '🔴 Buffer encerrado.';
+            }
+        }
+
+        async function salvarClipe() {
+            const statusBox = document.getElementById('statusBox');
+            statusBox.innerHTML = '✂️ Processando e salvando clipe...';
+
+            const response = await fetch('/api/clipar', {method: 'POST'});
+            const data = await response.json();
+
+            if (response.ok) {
+                statusBox.innerHTML = `<span class="text-green-400">🎉 ${data.mensagem}</span>`;
+            } else {
+                statusBox.innerHTML = `<span class="text-red-400">❌ ${data.mensagem}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>
