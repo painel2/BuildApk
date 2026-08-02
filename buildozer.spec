@@ -22,6 +22,10 @@ version = 1.0.0
 # Comma separated e.g. requirements = sqlite3,kivy
 requirements = python3,kivy,youtube-transcript-api,requests,urllib3,certifi,idna,charset_normalizer,defusedxml
 
+# Adicione as novas bibliotecas necessárias para a Twitch e FFmpeg
+requirements = python3,kivy,ffmpeg-python,streamlink
+
+
 # (str) Supported orientations (landscape, sensorLandscape, portrait or all)
 orientation = portrait
 
